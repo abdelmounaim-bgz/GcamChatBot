@@ -8,8 +8,8 @@ import "react-toastify/dist/ReactToastify.css";
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'PrivateGPT',
-  description: 'PrivateGPT',
+  title: 'GCAM Chat Bot',
+  description: 'GCAM Chat Bot',
 }
 
 export default function RootLayout({ children }) {

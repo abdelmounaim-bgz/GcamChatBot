@@ -1,4 +1,4 @@
-from flask import Flask,jsonify, render_template, flash, redirect, url_for, Markup, request
+from flask import Flask, jsonify, render_template, flash, redirect, url_for, Markup, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from langchain.chains import RetrievalQA
@@ -7,6 +7,7 @@ from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from langchain.llms import GPT4All, LlamaCpp
 import os
+import re
 import glob
 from typing import List
 import requests
@@ -44,7 +45,6 @@ model_path = os.environ.get('MODEL_PATH')
 model_n_ctx = os.environ.get('MODEL_N_CTX')
 llm = None
 
-from constants import CHROMA_SETTINGS
 
 class MyElmLoader(UnstructuredEmailLoader):
     """Wrapper to fallback to text/plain when default does not work"""
@@ -57,7 +57,7 @@ class MyElmLoader(UnstructuredEmailLoader):
             except ValueError as e:
                 if 'text/html content not found in email' in str(e):
                     # Try plain text
-                    self.unstructured_kwargs["content_source"]="text/plain"
+                    self.unstructured_kwargs["content_source"] = "text/plain"
                     doc = UnstructuredEmailLoader.load(self)
                 else:
                     raise
@@ -107,60 +107,97 @@ def load_documents(source_dir: str) -> List[Document]:
         )
     return [load_single_document(file_path) for file_path in all_files]
 
+
 @app.route('/ingest', methods=['GET'])
 def ingest_data():
-    # Load environment variables
+    #  Load environment variables
     persist_directory = os.environ.get('PERSIST_DIRECTORY')
     source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
     embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME')
 
-    # Load documents and split in chunks
+    #  Load documents and split in chunks
     print(f"Loading documents from {source_directory}")
-    chunk_size = 500
-    chunk_overlap = 50
+    chunk_size = 1000
+    chunk_overlap = 10
     documents = load_documents(source_directory)
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     texts = text_splitter.split_documents(documents)
     print(f"Loaded {len(documents)} documents from {source_directory}")
-    print(f"Split into {len(texts)} chunks of text (max. {chunk_size} characters each)")
+    print(
+        f"Split into {len(texts)} chunks of text (max. {chunk_size} characters each)")
 
     # Create embeddings
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
-    
+
     # Create and store locally vectorstore
-    db = Chroma.from_documents(texts, embeddings, persist_directory=persist_directory, client_settings=CHROMA_SETTINGS)
+    db = Chroma.from_documents(
+        texts, embeddings, persist_directory=persist_directory, client_settings=CHROMA_SETTINGS)
     db.persist()
     db = None
     return jsonify(response="Success")
-    
+
+
+@app.route('/update', methods=['GET'])
+def update_data():
+    #  Load environment variables
+    # dataUrl = os.environ.get('DATA_URL')
+
+    # r = requests.get(dataUrl)
+    # data = r.text.replace("<(.*?)>", "")
+    fileAll = open("./docs/all.txt", "r+")
+    data = fileAll.read()
+    fileAll.close()
+    data = re.sub("<(.*?)>", "", data)
+    data = re.sub("{(.*?)}", "", data)
+    data = re.sub("1 - DECRIRE LE PRODUIT", "", data)
+    data = re.sub("DECRIRE LE PRODUIT", "", data)
+    data = re.sub("Description du produit", "", data)
+    data = re.sub("Description Du Produit", "", data)
+    data = re.sub("Description du Service", "", data)
+    data = re.sub("Objet", "", data)
+    data = re.sub("Descriptif", "", data)
+    data = re.sub("&nbsp;", "", data)
+    data = re.sub("\.", ".\n", data)
+
+    # data = re.sub("\.", ".\n", data)
+    fileAllCleaned = open("./docs/allCleaned.txt", "w")
+    fileAllCleaned.write(data)
+    fileAllCleaned.close()
+    return jsonify(response="Success")
+
+
 @app.route('/get_answer', methods=['POST'])
 def get_answer():
     query = request.json
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
-    db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
-    retriever = db.as_retriever()
-    if llm==None:
-        return "Model not downloaded", 400    
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
-    if query!=None and query!="":
-        res = qa(query)
+    db = Chroma(persist_directory=persist_directory,
+                embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
+    retriever = db.as_retriever(
+        search_type="similarity", search_kwargs={"k": 1})
+    if llm == None:
+        return "Model not downloaded", 400
+    qa = RetrievalQA.from_chain_type(
+        llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
+    if query != None and query != "":
+        res = qa(query+".\n Réponds moi en français.")
         answer, docs = res['result'], res['source_documents']
-        
-        source_data =[]
+
+        source_data = []
         for document in docs:
-             source_data.append({"name":document.metadata["source"]})
+            source_data.append({"name": document.metadata["source"]})
 
-        return jsonify(query=query,answer=answer,source=source_data)
+        return jsonify(query=query, answer=answer, source=source_data)
 
-    return "Empty Query",400
+    return "Empty Query", 400
 
 
 @app.route('/upload_doc', methods=['POST'])
 def upload_doc():
-    
+
     if 'document' not in request.files:
         return jsonify(response="No document file found"), 400
-    
+
     document = request.files['document']
     if document.filename == '':
         return jsonify(response="No selected file"), 400
@@ -171,15 +208,18 @@ def upload_doc():
 
     return jsonify(response="Document upload successful")
 
+
 @app.route('/download_model', methods=['GET'])
 def download_and_save():
-    url = 'https://gpt4all.io/models/ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the URL of the resource to download
-    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
+    # Specify the URL of the resource to download
+    url = 'https://gpt4all.io/models/ggml-gpt4all-j-v1.3-groovy.bin'
+    # Specify the name for the downloaded file
+    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'
     models_folder = 'models'  # Specify the name of the folder inside the Flask app root
 
     if not os.path.exists(models_folder):
         os.makedirs(models_folder)
-    response = requests.get(url,stream=True)
+    response = requests.get(url, stream=True)
     total_size = int(response.headers.get('content-length', 0))
     bytes_downloaded = 0
     file_path = f'{models_folder}/{filename}'
@@ -194,19 +234,27 @@ def download_and_save():
             print(f'Download Progress: {progress}%')
     global llm
     callbacks = [StreamingStdOutCallbackHandler()]
-    llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
+    llm = GPT4All(model=model_path, n_ctx=model_n_ctx,
+                  backend='gptj', callbacks=callbacks, verbose=False)
     return jsonify(response="Download completed")
 
+
 def load_model():
-    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
+    filename = 'GPT4All-13B-snoozy.bin'  # Specify the name for the downloaded file
     models_folder = 'models'  # Specify the name of the folder inside the Flask app root
     file_path = f'{models_folder}/{filename}'
     if os.path.exists(file_path):
         global llm
         callbacks = [StreamingStdOutCallbackHandler()]
-        llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
+        llm = LlamaCpp(model_path=model_path, n_ctx=model_n_ctx,
+                       n_batch=8, callbacks=callbacks, verbose=False)
+        
+        # llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
+
 
 if __name__ == "__main__":
-  load_model()
-  print("LLM0", llm)
-  app.run(host="0.0.0.0", debug = False)
+    load_model()
+    print("LLM0", llm)
+    from waitress import serve
+    serve(app, host="0.0.0.0", port=5000)
+    # app.run(host="0.0.0.0", debug=False)

@@ -72,9 +72,9 @@ export default function MainContainer() {
                 >
                   <div>
                     {msg.isBot ? (
-                      <span style={{ fontSize: "12px" }}>PrivateGPT</span>
+                      <span style={{ fontSize: "12px" }}>GCAM Chat bot</span>
                     ) : (
-                      <span style={{ fontSize: "12px" }}>User</span>
+                      <span style={{ fontSize: "12px" }}>Vous</span>
                     )}
                   </div>
                   <div className="w-100">
@@ -88,11 +88,11 @@ export default function MainContainer() {
                           ) : (
                             <Stack direction="vertical" gap={3}>
                               <span>{msg.msg}</span>
-                              <span style={{ fontSize: "12px" }}>
+                              {/* <span style={{ fontSize: "12px" }}>
                                 {msg.source != null && msg.source != ""
                                   ? "Source: " + msg.source[0]["name"]
                                   : ""}
-                              </span>
+                              </span> */}
                             </Stack>
                           )}
                         </>
@@ -111,9 +111,9 @@ export default function MainContainer() {
               style={{ color: "black" }}
             >
               <h1 className="mt-sm-5">
-                <small>PrivateGPT by SamurAI</small>
+                <small>GCAM Chat Bot</small>
               </h1>
-              <h3 style={{ color: "gray" }}>A better UI for PrivateGPT</h3>
+              <h3 style={{ color: "gray" }}>---------</h3>
             </Stack>
           )}
           {loading ? <Stack gap={2} direction="horizontal" className="loading">
