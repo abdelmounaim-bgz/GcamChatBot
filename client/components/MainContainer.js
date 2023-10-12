@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef } from "react";
-import { FormControl, Stack, Spinner } from "react-bootstrap";
+import { FormControl, Stack,Spinner } from "react-bootstrap";
 import Image from "next/image";
 import { ToastContainer, toast } from "react-toastify";
 
@@ -23,7 +23,6 @@ export default function MainContainer() {
     } else {
       setLoading(true);
       let getQuestion = question;
-      console.log(JSON.stringify(question))
       setChat((chat) => [...chat, { isBot: false, msg: question }]);
       setQuestion("");
       try {
@@ -35,8 +34,8 @@ export default function MainContainer() {
           body: JSON.stringify(question),
         });
 
-        if (!response.ok) {
-          response.text().then(text => { toast.error("Error getting data." + text); })
+        if (!response.ok) {	
+		  response.text().then(text => {toast.error("Error getting data."+text);})
           setLoading(false);
         } else {
           const data = await response.json();
